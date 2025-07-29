@@ -32,3 +32,19 @@ if not df.empty:
 
 else:
     st.warning("No data available in MongoDB. Please fetch first.")
+    
+import streamlit as st
+from scripts.data_visualizer import get_channel_data
+
+st.set_page_config(page_title="YouTube Data Explorer", layout="wide")
+
+st.title("📊 YouTube Channel Data Explorer")
+
+st.write("Below is the data fetched from MongoDB:")
+
+df = get_channel_data()
+
+if not df.empty:
+    st.dataframe(df)
+else:
+    st.warning("No data found in MongoDB.")
