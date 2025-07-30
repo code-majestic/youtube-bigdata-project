@@ -4,12 +4,12 @@ import os
 
 load_dotenv()
 
-def get_mongo_client():
-    mongo_uri = os.getenv("MONGO_URI")
-    return MongoClient(mongo_uri)
+def get_mongodb_client():
+    mongodb_uri = os.getenv("MONGODB_URI")
+    return MongoClient(mongodb_uri)
 
 def fetch_videos_from_db():
-    client = get_mongo_client()
-    db = client['youtube_data']  # same as used during insert
+    client = get_mongodb_client()
+    db = client['youtube_data']  
     collection = db['videos']
     return list(collection.find())

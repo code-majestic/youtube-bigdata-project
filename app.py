@@ -1,50 +1,42 @@
 import streamlit as st
-import pandas as pd
 from pymongo import MongoClient
-from dotenv import load_dotenv
+import pandas as pd
 import os
+from dotenv import load_dotenv
 
 load_dotenv()
-mongo_uri = os.getenv("MONGODB_URI")
 
-client = MongoClient(mongo_uri)
-db = client["youtube_data"]
-collection = db["videos"]
+MONGODB_URI = os.getenv("MONGODB_URI")
+client = MongoClient(MONGODB_URI)
+db = client["youtube_data"]  
 
-data = list(collection.find())
-df = pd.DataFrame(data)
+st.set_page_config(page_title="YouTube Data Dashboard", layout="wide")
+st.title("YouTube Data Dashboard")
 
-st.title("📊 YouTube Video Dashboard")
+video_collection = db.get_collection("videos")  # Changed from "video" to "videos"
+video_data = list(video_collection.find())
 
-if not df.empty:
-    df['video_title'] = df['snippet'].apply(lambda x: x.get('title'))
-    df['channel_title'] = df['snippet'].apply(lambda x: x.get('channelTitle'))
-    df['published_date'] = df['snippet'].apply(lambda x: x.get('publishedAt'))
-    df['video_id'] = df['id'].apply(lambda x: x.get('videoId'))
+if video_data:
+    st.subheader("Video Information")
+    video_df = pd.DataFrame(video_data)
 
-    st.subheader("🎥 Video Details")
-    st.dataframe(df[['video_title', 'channel_title', 'published_date', 'video_id']])
+    if '_id' in video_df.columns:
+        video_df.drop(columns=['_id'], inplace=True)
 
-    st.subheader("🗓️ Videos Published Over Time")
-    df['published_date'] = pd.to_datetime(df['published_date'])
-    published_count = df.groupby(df['published_date'].dt.date).size()
-    st.line_chart(published_count)
-
+    st.dataframe(video_df, use_container_width=True)
 else:
-    st.warning("No data available in MongoDB. Please fetch first.")
-    
-import streamlit as st
-from scripts.data_visualizer import get_channel_data
+    st.warning("No video data found in MongoDB.")
+if "channel" in db.list_collection_names():
+    channel_collection = db.get_collection("channel")
+    channel_data = list(channel_collection.find())
 
-st.set_page_config(page_title="YouTube Data Explorer", layout="wide")
-
-st.title("📊 YouTube Channel Data Explorer")
-
-st.write("Below is the data fetched from MongoDB:")
-
-df = get_channel_data()
-
-if not df.empty:
-    st.dataframe(df)
+    if channel_data:
+        st.subheader("Channel Information")
+        channel_df = pd.DataFrame(channel_data)
+        if '_id' in channel_df.columns:
+            channel_df.drop(columns=['_id'], inplace=True)
+        st.dataframe(channel_df, use_container_width=True)
+    else:
+        st.warning("No channel data found in MongoDB.")
 else:
-    st.warning("No data found in MongoDB.")
+    st.info("'channel' collection not found. Showing only video data.")
