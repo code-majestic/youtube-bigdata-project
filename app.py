@@ -1,210 +1,226 @@
-import streamlit as st
-from pymongo import MongoClient
+from flask import Flask, render_template, jsonify, request
+import dask.dataframe as dd
 import pandas as pd
+from pymongo import MongoClient
 import os
 from dotenv import load_dotenv
-import plotly.express as px
+import numpy as np
 from datetime import datetime
+import json
 
 load_dotenv()
 
-MONGODB_URI = os.getenv("MONGODB_URI")
-client = MongoClient(MONGODB_URI)
-db = client["youtube_data"]  
+app = Flask(__name__)
 
-st.set_page_config(page_title="YouTube Analytics Dashboard", layout="wide")
-st.title("🎥 YouTube Analytics Dashboard")
+class YouTubeDaskAnalytics:
+    def __init__(self):
+        self.mongodb_uri = os.getenv("MONGODB_URI")
+        self.client = MongoClient(self.mongodb_uri)
+        self.db = self.client['youtube_data']
+        print("🚀 Dask Analytics Initialized for Web!")
 
-# Sidebar for navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.selectbox("Choose a page", ["Overview", "Video Analytics", "Channel Stats", "Raw Data"])
-
-if page == "Overview":
-    st.header("📊 Channel Overview")
-    
-    # Channel Information
-    if "channel" in db.list_collection_names():
-        channel_collection = db.get_collection("channel")
-        channel_data = list(channel_collection.find())
-        
-        if channel_data:
-            channel = channel_data[0]
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                subscribers = channel.get('statistics', {}).get('subscriberCount', 'N/A')
-                st.metric("Subscribers", f"{int(subscribers):,}" if subscribers != 'N/A' else 'N/A')
-            
-            with col2:
-                total_views = channel.get('statistics', {}).get('viewCount', 'N/A')
-                st.metric("Total Views", f"{int(total_views):,}" if total_views != 'N/A' else 'N/A')
-            
-            with col3:
-                video_count = channel.get('statistics', {}).get('videoCount', 'N/A')
-                st.metric("Total Videos", f"{int(video_count):,}" if video_count != 'N/A' else 'N/A')
-            
-            with col4:
-                if 'snippet' in channel and 'publishedAt' in channel['snippet']:
-                    created_date = datetime.fromisoformat(channel['snippet']['publishedAt'].replace('Z', '+00:00'))
-                    st.metric("Channel Age", f"{(datetime.now() - created_date.replace(tzinfo=None)).days} days")
-    
-    # Video Statistics Summary
-    video_collection = db.get_collection("videos")
-    video_data = list(video_collection.find())
-    
-    if video_data:
-        st.header("📈 Video Performance Summary")
-        
-        df = pd.DataFrame(video_data)
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            avg_views = df['view_count'].mean() if 'view_count' in df.columns else 0
-            st.metric("Average Views", f"{int(avg_views):,}")
-        
-        with col2:
-            avg_engagement = df['engagement_rate'].mean() if 'engagement_rate' in df.columns else 0
-            st.metric("Avg Engagement Rate", f"{avg_engagement:.2f}%")
-        
-        with col3:
-            avg_duration = df['duration_seconds'].mean() if 'duration_seconds' in df.columns else 0
-            st.metric("Average Duration", f"{int(avg_duration//60)}:{int(avg_duration%60):02d}")
-
-elif page == "Video Analytics":
-    st.header("🎬 Video Analytics")
-    
-    video_collection = db.get_collection("videos")
-    video_data = list(video_collection.find())
-    
-    if video_data:
-        df = pd.DataFrame(video_data)
-        
-        if 'view_count' in df.columns and 'snippet' in df.columns:
-            # Top 10 videos by views
-            st.subheader("Top 10 Most Viewed Videos")
-            
-            # Extract title from snippet
-            df['title'] = df['snippet'].apply(lambda x: x.get('title', 'No Title') if isinstance(x, dict) else 'No Title')
-            
-            top_videos = df.nlargest(10, 'view_count')[['title', 'view_count', 'like_count', 'comment_count']]
-            st.dataframe(top_videos, use_container_width=True)
-            
-            # Views distribution
-            if len(df) > 0:
-                st.subheader("Views Distribution")
-                fig = px.histogram(df, x='view_count', nbins=20, title="Distribution of Video Views")
-                st.plotly_chart(fig, use_container_width=True)
+    def load_and_process_data(self):  
+        """Load data and convert to Dask DataFrame for big data processing"""  
+        try:   
+            videos_collection = self.db['videos']  
+            videos_data = list(videos_collection.find())  
+              
+            if not videos_data:  
+                return None  
                 
-                # Engagement vs Views scatter plot
-                if 'engagement_rate' in df.columns:
-                    st.subheader("Engagement Rate vs Views")
-                    fig2 = px.scatter(df, x='view_count', y='engagement_rate', 
-                                    hover_data=['title'], title="Engagement Rate vs Views")
-                    st.plotly_chart(fig2, use_container_width=True)
-    else:
-        st.warning("No video data found.")
-
-elif page == "Channel Stats":
-    st.header("📺 Channel Statistics")
-    
-    if "channel" in db.list_collection_names():
-        channel_collection = db.get_collection("channel")
-        channel_data = list(channel_collection.find())
-        
-        if channel_data:
-            channel = channel_data[0]
-            
-            st.subheader("Channel Information")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write("**Channel Name:**", channel.get('snippet', {}).get('title', 'N/A'))
-                st.write("**Description:**", channel.get('snippet', {}).get('description', 'N/A')[:200] + "...")
-                st.write("**Country:**", channel.get('snippet', {}).get('country', 'N/A'))
-            
-            with col2:
-                stats = channel.get('statistics', {})
-                st.write("**Subscribers:**", f"{int(stats.get('subscriberCount', 0)):,}")
-                st.write("**Total Views:**", f"{int(stats.get('viewCount', 0)):,}")
-                st.write("**Videos:**", f"{int(stats.get('videoCount', 0)):,}")
+            df = pd.DataFrame(videos_data)  
+               
+            if 'snippet' in df.columns:  
+                snippet_df = pd.json_normalize(df['snippet'])  
+                snippet_df.columns = ['snippet_' + col for col in snippet_df.columns]  
+                df = pd.concat([df.drop('snippet', axis=1), snippet_df], axis=1)  
                 
-                if 'snippet' in channel and 'publishedAt' in channel['snippet']:
-                    st.write("**Created:**", channel['snippet']['publishedAt'][:10])
+            dask_df = dd.from_pandas(df, npartitions=4)  
+            return dask_df  
+              
+        except Exception as e:  
+            print(f"Error loading data: {e}")  
+            return None  
     
-    # Video duration analysis
-    video_collection = db.get_collection("videos")
-    video_data = list(video_collection.find())
+    def get_web_analytics(self, dask_df):
+        """Get analytics data formatted for web display"""
+        try: 
+            dask_df['view_count'] = dd.to_numeric(dask_df['view_count'], errors='coerce')  
+            dask_df['like_count'] = dd.to_numeric(dask_df['like_count'], errors='coerce')  
+            dask_df['engagement_rate'] = dd.to_numeric(dask_df['engagement_rate'], errors='coerce')  
+            dask_df['duration_seconds'] = dd.to_numeric(dask_df['duration_seconds'], errors='coerce')  
+            
+            total_videos = len(dask_df)
+            avg_views = dask_df['view_count'].mean().compute()
+            max_views = dask_df['view_count'].max().compute()
+            min_views = dask_df['view_count'].min().compute()
+            total_views = dask_df['view_count'].sum().compute()
+            avg_engagement = dask_df['engagement_rate'].mean().compute()
+            
+            available_cols = ['view_count']  
+            if 'snippet_title' in dask_df.columns:  
+                available_cols.append('snippet_title')  
+            if 'like_count' in dask_df.columns:  
+                available_cols.append('like_count')  
+            if 'engagement_rate' in dask_df.columns:  
+                available_cols.append('engagement_rate')  
+            
+            top_videos_df = dask_df.nlargest(10, 'view_count')[available_cols].compute()
+            
+            top_videos = []
+            for idx, row in top_videos_df.iterrows():
+                if not pd.isna(row['view_count']):
+                    video_data = {
+                        'title': str(row.get('snippet_title', 'N/A'))[:50] + "..." if len(str(row.get('snippet_title', 'N/A'))) > 50 else str(row.get('snippet_title', 'N/A')),
+                        'views': int(row['view_count']),
+                        'likes': int(row.get('like_count', 0)),
+                        'engagement': float(row.get('engagement_rate', 0))
+                    }
+                    top_videos.append(video_data)
+            
+            percentiles = dask_df['view_count'].quantile([0.25, 0.5, 0.75, 0.9, 0.95, 0.99]).compute()
+            
+            return {
+                'success': True,
+                'metrics': {
+                    'total_videos': int(total_videos),
+                    'total_views': int(total_views),
+                    'avg_views': int(avg_views),
+                    'max_views': int(max_views),
+                    'min_views': int(min_views),
+                    'avg_engagement': float(avg_engagement)
+                },
+                'top_videos': top_videos,
+                'percentiles': {
+                    '25th': int(percentiles[0.25]),
+                    '50th': int(percentiles[0.5]),
+                    '75th': int(percentiles[0.75]),
+                    '90th': int(percentiles[0.9]),
+                    '95th': int(percentiles[0.95]),
+                    '99th': int(percentiles[0.99])
+                }
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
     
-    if video_data:
-        df = pd.DataFrame(video_data)
-        
-        if 'duration_seconds' in df.columns:
-            st.subheader("Video Duration Analysis")
+    def simulate_big_data_demo(self):
+        """Simulate big data processing for demo"""
+        try:
+            n_videos = 10000  
+            np.random.seed(42)
             
-            # Duration categories
-            def categorize_duration(seconds):
-                if seconds < 300:  # 5 minutes
-                    return "Short (< 5 min)"
-                elif seconds < 1200:  # 20 minutes
-                    return "Medium (5-20 min)"
-                else:
-                    return "Long (> 20 min)"
+            views = np.concatenate([
+                np.random.exponential(1000, int(n_videos * 0.7)),
+                np.random.exponential(10000, int(n_videos * 0.25)),
+                np.random.exponential(100000, int(n_videos * 0.05))
+            ])
             
-            df['duration_category'] = df['duration_seconds'].apply(categorize_duration)
+            large_data = {
+                'video_id': [f'demo_video_{i:06d}' for i in range(n_videos)],
+                'views': views[:n_videos].astype(int),
+                'likes': (views[:n_videos] * np.random.uniform(0.01, 0.05, n_videos)).astype(int),
+                'category': np.random.choice([
+                    'Gaming', 'Music', 'Entertainment', 'Education', 'Tech',
+                    'Sports', 'News', 'Comedy', 'Lifestyle', 'Travel'
+                ], n_videos),
+                'upload_hour': np.random.randint(0, 24, n_videos)
+            }
             
-            duration_counts = df['duration_category'].value_counts()
-            fig = px.pie(values=duration_counts.values, names=duration_counts.index, 
-                        title="Video Duration Distribution")
-            st.plotly_chart(fig, use_container_width=True)
+            large_df = pd.DataFrame(large_data)
+            large_df['engagement_rate'] = (large_df['likes'] / large_df['views']) * 100
+            
+            dask_large_df = dd.from_pandas(large_df, npartitions=5)
+            
+            # Analytics
+            total_views = dask_large_df['views'].sum().compute()
+            avg_views = dask_large_df['views'].mean().compute()
+            viral_videos = (dask_large_df['views'] > 100000).sum().compute()
+            
+            category_stats = dask_large_df.groupby('category')['views'].agg(['count', 'mean', 'sum']).compute()
+            category_data = []
+            for category, row in category_stats.iterrows():
+                category_data.append({
+                    'category': category,
+                    'count': int(row['count']),
+                    'avg_views': int(row['mean']),
+                    'total_views': int(row['sum'])
+                })
+            
+            # Best upload hours
+            hour_performance = dask_large_df.groupby('upload_hour')['views'].mean().compute()
+            hour_data = [{'hour': int(hour), 'avg_views': int(views)} for hour, views in hour_performance.items()]
+            hour_data = sorted(hour_data, key=lambda x: x['avg_views'], reverse=True)
+            
+            return {
+                'success': True,
+                'demo_metrics': {
+                    'total_videos': n_videos,
+                    'total_views': int(total_views),
+                    'avg_views': int(avg_views),
+                    'viral_videos': int(viral_videos),
+                    'viral_percentage': round(viral_videos/n_videos*100, 1)
+                },
+                'category_performance': category_data[:5],  # Top 5
+                'best_hours': hour_data[:5]  # Top 5
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
 
-elif page == "Raw Data":
-    st.header("📋 Raw Data")
-    
-    tab1, tab2 = st.tabs(["Video Data", "Channel Data"])
-    
-    with tab1:
-        video_collection = db.get_collection("videos")
-        video_data = list(video_collection.find())
-        
-        if video_data:
-            df = pd.DataFrame(video_data)
-            if '_id' in df.columns:
-                df.drop(columns=['_id'], inplace=True)
-            
-            st.subheader(f"Video Data ({len(df)} videos)")
-            st.dataframe(df, use_container_width=True)
-            
-            # Download button
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="Download Video Data as CSV",
-                data=csv,
-                file_name=f"youtube_videos_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
+analytics = YouTubeDaskAnalytics()
+
+@app.route('/')
+def home():
+    return render_template('dask_analytics.html')
+
+@app.route('/dask-analytics')
+def dask_analytics_page():
+    return render_template('dask_analytics.html')
+
+@app.route('/api/dask-analytics')
+def api_dask_analytics():
+    """API endpoint for real data analytics"""
+    try:
+        dask_df = analytics.load_and_process_data()
+        if dask_df is not None:
+            results = analytics.get_web_analytics(dask_df)
+            return jsonify(results)
         else:
-            st.warning("No video data found.")
-    
-    with tab2:
-        if "channel" in db.list_collection_names():
-            channel_collection = db.get_collection("channel")
-            channel_data = list(channel_collection.find())
-            
-            if channel_data:
-                channel_df = pd.DataFrame(channel_data)
-                if '_id' in channel_df.columns:
-                    channel_df.drop(columns=['_id'], inplace=True)
-                
-                st.subheader("Channel Data")
-                st.dataframe(channel_df, use_container_width=True)
-            else:
-                st.warning("No channel data found.")
-        else:
-            st.info("Channel collection not found.")
+            return jsonify({'success': False, 'error': 'No data found in MongoDB'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
-# Footer
-st.sidebar.markdown("---")
-st.sidebar.markdown("**Last Updated:** " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+@app.route('/api/big-data-demo')
+def api_big_data_demo():
+    """API endpoint for big data simulation"""
+    try:
+        results = analytics.simulate_big_data_demo()
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/dashboard-stats')
+def api_dashboard_stats():
+    """Combined dashboard statistics"""
+    try:
+        real_data = {'success': False}
+        dask_df = analytics.load_and_process_data()
+        if dask_df is not None:
+            real_data = analytics.get_web_analytics(dask_df)
+        
+        demo_data = analytics.simulate_big_data_demo()
+        
+        return jsonify({
+            'real_data': real_data,
+            'demo_data': demo_data,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+if __name__ == '__main__':
+    print("Starting YouTube Big Data Analytics Web App")
+    print("Open: http://localhost:5000")
+    print("Dask Analytics: http://localhost:5000/dask-analytics")
+    app.run(debug=True, host='0.0.0.0', port=5000)

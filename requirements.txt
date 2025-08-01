@@ -4,3 +4,8 @@ python-dotenv
 pandas
 google-api-python-client
 isodate
+plotly
+dask[complete]
+numpy
+scikit-learn
+flask

@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> YouTube Big Data Analytics - Dask Powered</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .navbar {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .navbar h1 {
+            color: white;
+            font-size: 1.8rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        .hero {
+            text-align: center;
+            margin-bottom: 3rem;
+            color: white;
+        }
+
+        .hero h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+        }
+
+        .card h3 {
+            color: white;
+            margin-bottom: 1rem;
+            font-size: 1.3rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric {
+            text-align: center;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            color: white;
+        }
+
+        .metric-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            padding: 1rem;
+        }
+
+        .video-list {
+            max-height: 400px;
+            overflow-y: auto;
+            color: white;
+        }
+
+        .video-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            transition: background 0.3s ease;
+        }
+
+        .video-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .video-title {
+            flex: 1;
+            font-weight: 500;
+        }
+
+        .video-stats {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: white;
+            font-size: 1.2rem;
+            margin: 2rem 0;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .error {
+            background: rgba(255, 0, 0, 0.1);
+            color: #ff6b6b;
+            padding: 1rem;
+            border-radius: 10px;
+            margin: 1rem 0;
+            border: 1px solid rgba(255, 0, 0, 0.3);
+        }
+
+        .phase-title {
+            color: white;
+            font-size: 1.5rem;
+            margin: 2rem 0 1rem 0;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .analytics-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .metrics-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1> YouTube Big Data Analytics</h1>
+    </div>
+
+    <div class="container">
+        <div class="hero">
+            <h2> Distributed Computing with Dask</h2>
+            <p>Real-time YouTube analytics powered by big data processing</p>
+        </div>
+
+        <div class="controls">
+            <button class="btn" onclick="loadRealData()"> Analyze Real Data</button>
+            <button class="btn" onclick="loadDemoData()"> Big Data Demo</button>
+            <button class="btn" onclick="loadBothData()"> Full Analytics</button>
+        </div>
+
+        <div class="loading" id="loading">
+             Processing data with Dask distributed computing...
+        </div>
+
+        <div id="error-container"></div>
+
+        <!-- Real Data Section -->
+        <div id="real-data-section" style="display: none;">
+            <h2 class="phase-title"> Phase 1: Real YouTube Data Analytics</h2>
+            
+            <div class="analytics-grid">
+                <div class="card">
+                    <h3> Performance Metrics</h3>
+                    <div class="metrics-grid" id="real-metrics">
+                        <!-- Metrics will be populated here -->
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3> Top Performing Videos</h3>
+                    <div class="video-list" id="top-videos">
+                        <!-- Top videos will be populated here -->
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3> Performance Distribution</h3>
+                    <div class="chart-container">
+                        <canvas id="percentiles-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Demo Data Section -->
+        <div id="demo-data-section" style="display: none;">
+            <h2 class="phase-title"> Phase 2: Big Data Simulation (10K Videos)</h2>
+            
+            <div class="analytics-grid">
+                <div class="card">
+                    <h3> Big Data Metrics</h3>
+                    <div class="metrics-grid" id="demo-metrics">
+                        <!-- Demo metrics will be populated here -->
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3> Category Performance</h3>
+                    <div class="chart-container">
+                        <canvas id="category-chart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3> Best Upload Times</h3>
+                    <div class="chart-container">
+                        <canvas id="timing-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let charts = {};
+
+        function showLoading() {
+            document.getElementById('loading').classList.add('show');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').classList.remove('show');
+        }
+
+        function showError(message) {
+            document.getElementById('error-container').innerHTML = 
+                `<div class="error"> Error: ${message}</div>`;
+        }
+
+        function clearError() {
+            document.getElementById('error-container').innerHTML = '';
+        }
+
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toLocaleString();
+        }
+
+        function createMetricCard(label, value, suffix = '') {
+            return `
+                <div class="metric">
+                    <div class="metric-value">${formatNumber(value)}${suffix}</div>
+                    <div class="metric-label">${label}</div>
+                </div>
+            `;
+        }
+
+        function displayRealData(data) {
+            if (!data.success) {
+                showError(data.error || 'Failed to load real data');
+                return;
+            }
+
+            document.getElementById('real-data-section').style.display = 'block';
+            
+            const metricsHtml = `
+                ${createMetricCard('Total Videos', data.metrics.total_videos)}
+                ${createMetricCard('Total Views', data.metrics.total_views)}
+                ${createMetricCard('Avg Views', data.metrics.avg_views)}
+                ${createMetricCard('Max Views', data.metrics.max_views)}
+                ${createMetricCard('Min Views', data.metrics.min_views)}
+                ${createMetricCard('Avg Engagement', data.metrics.avg_engagement.toFixed(1), '%')}
+            `;
+            document.getElementById('real-metrics').innerHTML = metricsHtml;
+
+            const videosHtml = data.top_videos.map(video => `
+                <div class="video-item">
+                    <div class="video-title">${video.title}</div>
+                    <div class="video-stats">
+                        <span> ${formatNumber(video.views)}</span>
+                        <span> ${formatNumber(video.likes)}</span>
+                        <span> ${video.engagement.toFixed(1)}%</span>
+                    </div>
+                </div>
+            `).join('');
+            document.getElementById('top-videos').innerHTML = videosHtml;
+
+            createPercentilesChart(data.percentiles);
+        }
+
+        function displayDemoData(data) {
+            if (!data.success) {
+                showError(data.error || 'Failed to load demo data');
+                return;
+            }
+
+            document.getElementById('demo-data-section').style.display = 'block';
+            
+            const demoMetricsHtml = `
+                ${createMetricCard('Total Videos', data.demo_metrics.total_videos)}
+                ${createMetricCard('Total Views', data.demo_metrics.total_views)}
+                ${createMetricCard('Avg Views', data.demo_metrics.avg_views)}
+                ${createMetricCard('Viral Videos', data.demo_metrics.viral_videos)}
+                ${createMetricCard('Viral Rate', data.demo_metrics.viral_percentage, '%')}
+            `;
+            document.getElementById('demo-metrics').innerHTML = demoMetricsHtml;
+
+            createCategoryChart(data.category_performance);
+            
+            createTimingChart(data.best_hours);
+        }
+
+        function createPercentilesChart(percentiles) {
+            const ctx = document.getElementById('percentiles-chart').getContext('2d');
+            
+            if (charts.percentiles) charts.percentiles.destroy();
+            
+            charts.percentiles = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['25th %ile', '50th %ile', '75th %ile', '90th %ile', '95th %ile', '99th %ile'],
+                    datasets: [{
+                        label: 'Views',
+                        data: [percentiles['25th'], percentiles['50th'], percentiles['75th'], 
+                               percentiles['90th'], percentiles['95th'], percentiles['99th']],
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.8)',
+                            'rgba(54, 162, 235, 0.8)',
+                            'rgba(255, 205, 86, 0.8)',
+                            'rgba(75, 192, 192, 0.8)',
+                            'rgba(153, 102, 255, 0.8)',
+                            'rgba(255, 159, 64, 0.8)'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: { display: true, text: 'Performance Percentiles' }
+                    }
+                }
+            });
+        }
+
+        function createCategoryChart(categories) {
+            const ctx = document.getElementById('category-chart').getContext('2d');
+            
+            if (charts.category) charts.category.destroy();
+            
+            charts.category = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: categories.map(c => c.category),
+                    datasets: [{
+                        data: categories.map(c => c.avg_views),
+                        backgroundColor: [
+                            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', 
+                            '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: { display: true, text: 'Average Views by Category' }
+                    }
+                }
+            });
+        }
+
+        function createTimingChart(hours) {
+            const ctx = document.getElementById('timing-chart').getContext('2d');
+            
+            if (charts.timing) charts.timing.destroy();
+            
+            charts.timing = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: hours.map(h => `${h.hour}:00`),
+                    datasets: [{
+                        label: 'Average Views',
+                        data: hours.map(h => h.avg_views),
+                        borderColor: '#36A2EB',
+                        backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: { display: true, text: 'Best Upload Hours' }
+                    }
+                }
+            });
+        }
+
+        async function loadRealData() {
+            showLoading();
+            clearError();
+            
+            try {
+                const response = await fetch('/api/dask-analytics');
+                const data = await response.json();
+                displayRealData(data);
+            } catch (error) {
+                showError('Failed to load real data: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function loadDemoData() {
+            showLoading();
+            clearError();
+            
+            try {
+                const response = await fetch('/api/big-data-demo');
+                const data = await response.json();
+                displayDemoData(data);
+            } catch (error) {
+                showError('Failed to load demo data: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function loadBothData() {
+            showLoading();
+            clearError();
+            
+            try {
+                const response = await fetch('/api/dashboard-stats');
+                const data = await response.json();
+                
+                if (data.real_data) {
+                    displayRealData(data.real_data);
+                }
+                
+                if (data.demo_data) {
+                    displayDemoData(data.demo_data);
+                }
+            } catch (error) {
+                showError('Failed to load analytics: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Auto-load on page load
+        window.addEventListener('load', () => {
+            loadBothData();
+        });
+    </script>
+</body>
+</html>
+
+

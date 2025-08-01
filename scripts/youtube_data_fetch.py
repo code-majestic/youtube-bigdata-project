@@ -130,20 +130,16 @@ def fetch_and_store_data():
         if channel_response['items']:
             channel_data = channel_response['items'][0]
             
-            # Add processed timestamp
             channel_data['processed_at'] = datetime.now()
             
-            # Clear existing channel data and insert new
             channel_collection.delete_many({'id': channel_id})
             channel_collection.insert_one(channel_data)
             print(f"Inserted enhanced channel: {channel_data['snippet']['title']}")
 
-        # Enhanced Video Data fetch
-        # First get video IDs
         search_response = youtube.search().list(
             part='id',
             channelId=channel_id,
-            maxResults=50,  # Increased from 5 to 50
+            maxResults=50,  
             type='video'
         ).execute()
 
@@ -152,9 +148,7 @@ def fetch_and_store_data():
             if item['id']['kind'] == 'youtube#video':
                 video_ids.append(item['id']['videoId'])
 
-        # Now get detailed video information
         if video_ids:
-            # Process videos in batches of 50 (API limit)
             for i in range(0, len(video_ids), 50):
                 batch_ids = video_ids[i:i+50]
                 
@@ -167,7 +161,6 @@ def fetch_and_store_data():
                     # Enhance video data
                     enhanced_video = process_video_data(video)
                     
-                    # Clear existing video and insert enhanced version
                     videos_collection.delete_many({'id': video['id']})
                     videos_collection.insert_one(enhanced_video)
                     print(f"Inserted enhanced video: {video['snippet']['title']}")
