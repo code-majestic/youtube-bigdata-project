@@ -5,7 +5,7 @@ pandas
 google-api-python-client
 isodate
 plotly
-dask[complete]
+dask
 numpy
 scikit-learn
 flask
